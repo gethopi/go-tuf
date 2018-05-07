@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -55,6 +56,18 @@ func (h *httpRemoteStore) GetTarget(name string) (io.ReadCloser, int64, error) {
 }
 
 func (h *httpRemoteStore) get(s string) (io.ReadCloser, int64, error) {
+	// Custom net transport
+	var netTransport = &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 30 * time.Second,
+	}
+	// Make a new HTTP client.
+	var httpClient = &http.Client{
+		Timeout:   time.Minute * 60,
+		Transport: netTransport,
+	}
 	u := h.url(s)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
@@ -66,13 +79,13 @@ func (h *httpRemoteStore) get(s string) (io.ReadCloser, int64, error) {
 	var res *http.Response
 	if r := h.opts.Retries; r != nil {
 		for start := time.Now(); time.Since(start) < r.Total; time.Sleep(r.Delay) {
-			res, err = http.DefaultClient.Do(req)
+			res, err = httpClient.Do(req)
 			if err == nil && (res.StatusCode < 500 || res.StatusCode > 599) {
 				break
 			}
 		}
 	} else {
-		res, err = http.DefaultClient.Do(req)
+		res, err = Client.Do(req)
 	}
 	if err != nil {
 		return nil, 0, err
